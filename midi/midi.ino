@@ -150,8 +150,8 @@ void loop() {
         break;
       }
 
-      if (revSeq == false) stepPos++;
-      else if (revSeq == true) stepPos--;
+      if (revSeq == false) ++stepPos;
+      else if (revSeq == true) --stepPos;
 
       if (revSeq == false) {
         if (stepPos >= seqLength+1) stepPos = 0;

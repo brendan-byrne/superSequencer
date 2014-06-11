@@ -41,7 +41,8 @@ int mappedSlideVals[numChannels];                    // Mapped value sent to all
 int rawTopVals[numChannels];                         // Raw potentiometer readings
 int lastPotVals[numChannels];                        // Stored value of last reading used to compare against new readings
 int mappedPotVals[numChannels];                      // Mapped value sent to allVals[]
-int allVals[16];                                     // All mapped analog readings stored in this array. Used to select from buttonCommands[] array
+int topVals[8];                                     // All mapped analog readings stored in this array. Used to select from buttonCommands[] array
+int botVals[8];    
 
 // Button Management
 const int numButtons = 2;                            // Number of pushbuttons directly wired to Teensy inputs
@@ -99,14 +100,14 @@ int highBot[] = {
 int selector = 0;
 
 // Joy Commands
+int buttonCommands[] = {
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10};           // Button commands to send to computer
 int singleCommands[] = {
   0, 1, 2, 3, 4, 5, 8, 10, 12, 14};
 int doubleCommands[] = {
   9, 11, 13, 15};
 int doubleArray[] = {
   8, 10, 12, 14, 10, 12, 14, 8};
-int joyCommands[] = {
-  0, 45, 90, 135, 180, 225, 270, 315};
 
 // ----- OBJECT DECLARATION ----------------------------------------------------------------------------------------
 Max72xxPanel matrix = Max72xxPanel(matrixPin, numberOfHorizontalDisplays, numberOfVerticalDisplays);
@@ -127,10 +128,6 @@ void setup() {
   matrix.setIntensity(15);                                       // Set LED brightness of both matrix
   matrix.setRotation(0, 3);                                     // The first display is position upside down
   matrix.setRotation(1, 3);                                     // The same hold for the last display
-  Joystick.X(512);
-  Joystick.Y(512);
-  Joystick.Z(512);
-  Joystick.hat(-1);
 }
 
 // ----- LOOP ------------------------------------------------------------------------------------------------------
@@ -145,169 +142,66 @@ void loop() {
   // LED Steps + S
   if (runSeq == true) {
     if ((millis() - changeTime) > tempo) { 
-      setRegisters();
-      selector = 1;           // Change here to make selection      
+      for (int x=7; x>=0; x--) registers[x] = LOW; 
+      registers[stepPos] = HIGH;
 
+      averageBot[stepPos] = map(averageBot[stepPos], 1023, 0, 0, 128);
+      usbMIDI.sendControlChange(20, averageBot[stepPos], 1);
+      
       switch(selector) {
       case 0: 
-        buttonMapA();        // 8-up  10-right  12-down  14-left
+        midiMapA();
         break;
-      case 1:
-        DpadA();             // Rotational: 0 degrees = Up and then proceeding clockwise
-        break;  
-      case 2:
-        analogA();             // Rotational: 0 degrees = Up and then proceeding clockwise
-        break; 
       }
 
-      seq();
+      if (revSeq == false) ++stepPos;
+      else if (revSeq == true) --stepPos;
+
+      if (revSeq == false) {
+        if (stepPos >= seqLength+1) stepPos = 0;
+      }
+      else if (revSeq == true) {
+        if (stepPos <= -1) stepPos = seqLength;
+      }
       changeTime = millis();
     }
     testReset = 1;
   }
+
   else if (testReset == 1) {
     switch(selector) {
     case 0: 
-      buttonMapB();
+      midiMapB();
       break;
-    case 1:
-      DpadB();
-      break; 
-    case 2:
-      analogB();             // Rotational: 0 degrees = Up and then proceeding clockwise
-      break; 
     }
-    testReset = 0;
+
   }  
-  updates();
-}
-
-// ----- FUNCTIONS -------------------------------------------------------------------------------------------------
-// Buttons
-void buttonMapA() {
-  if (testReset == 1) {
-    buttonFunction(0);
+ 
+  for (int x=0; x<numChannels; x++) {
+    
+    Serial.print(x);
+    Serial.print("\t");
+    Serial.println(averageBot[x]);
   }
-  lastCommand = allVals[stepPos];  
-  buttonFunction(1);
-}
-
-void buttonMapB() {
-  buttonFunction(0);
-}
-
-void buttonFunction(int on) {
-  for (int x=0; x<4; x++) {
-    if (lastCommand == doubleCommands[x]) {
-      Joystick.button(doubleArray[x], on);
-      Joystick.button(doubleArray[x+4], on);
-    }
-  }
-
-  for (int x=0; x<10; x++) {
-    if (lastCommand == singleCommands[x]) {
-      Joystick.button(singleCommands[x], on);
-    }
-  }
-}
-
-// Dpad
-void DpadA() {
-  if (testReset == 1) {
-    if (lastCommand > 7) {
-      Joystick.hat(-1);
-    } else if (lastCommand < 8) {
-      for (int x = 0; x<7; x++) {
-      Joystick.button(x, 0);
-      }
-    }
-  }
-  lastCommand = allVals[stepPos];  
-  if (lastCommand > 7) {
-    Joystick.hat(joyCommands[lastCommand-8]);
-  } else if (lastCommand < 8) {
-    Joystick.button(lastCommand+1, 1);
-  }
-}
-
-void DpadB() {
-    if (lastCommand > 7) {
-      Joystick.hat(-1);
-    } else if (lastCommand < 8) {
-      for (int x = 0; x<7; x++) {
-      Joystick.button(x, 0);
-      }
-    }
-}
-
-// Analog Joystick
-void analogA() {
-  if (testReset == 1) {
-    if (lastCommand > 7) {
-      Joystick.X(512);
-      Joystick.Y(512);
-    } else if (lastCommand < 8) {
-      for (int x = 0; x<7; x++) {
-      Joystick.button(x, 0);
-      }
-    }
-  }
-  lastCommand = allVals[stepPos];  
-  if (lastCommand > 7) {
-    if (lastCommand == 8) {
-      Joystick.X(512);
-      Joystick.Y(0);
-    }
-    if (lastCommand == 9) {
-      Joystick.X(1023);
-      Joystick.Y(0);
-    }
-    if (lastCommand == 10) {
-      Joystick.X(1023);
-      Joystick.Y(512);
-    }
-    if (lastCommand == 11) {
-      Joystick.X(1023);
-      Joystick.Y(1023);
-    }
-    if (lastCommand == 12) {
-      Joystick.X(512);
-      Joystick.Y(1023);
-    }
-    if (lastCommand == 13) {
-      Joystick.X(0);
-      Joystick.Y(1023);
-    }
-    if (lastCommand == 14) {
-      Joystick.X(0);
-      Joystick.Y(512);
-    }
-    if (lastCommand == 15) {
-      Joystick.X(0);
-      Joystick.Y(0);
-    }    
-  } else if (lastCommand < 8) {
-    Joystick.button(lastCommand+1, 1);
-  }
-}
-
-void analogB() {
-    if (lastCommand > 7) {
-      Joystick.X(512);
-      Joystick.Y(512);
-    } else if (lastCommand < 8) {
-      for (int x = 0; x<7; x++) {
-      Joystick.button(x, 0);
-      }
-    }
-}
-
-// update
-void updates() {
+ 
   tracker += 1;                                                   //Advance index to next position
   if (tracker >= numReadings) tracker = 0; 
   writeRegisters();
   matrix.write();  
+}
+// ----- FUNCTIONS -------------------------------------------------------------------------------------------------
+// MIDI
+void midiMapA() {
+  if (testReset == 1) {
+    usbMIDI.sendNoteOff(lastCommand+2, 0, 1);
+  }
+  lastCommand = topVals[stepPos];  
+  usbMIDI.sendNoteOn(lastCommand+50, 90, 1);
+}
+
+void midiMapB() {
+  usbMIDI.sendNoteOff(lastCommand+2, 0, 1);
+  testReset = 0;
 }
 
 // Read Multiplexer
@@ -327,24 +221,6 @@ void writeRegisters() {
     digitalWrite(clockPin, HIGH);
   }
   digitalWrite(latchPin, HIGH);
-}
-
-void setRegisters() {
-  for (int x=7; x>=0; x--) registers[x] = LOW; 
-  registers[stepPos] = HIGH;
-}
-
-// Seq 
-void seq() {
-  if (revSeq == false) stepPos++;
-  else if (revSeq == true) stepPos--;
-
-  if (revSeq == false) {
-    if (stepPos >= seqLength+1) stepPos = 0;
-  }
-  else if (revSeq == true) {
-    if (stepPos <= -1) stepPos = seqLength;
-  }
 }
 
 // Clear Matrix
@@ -391,8 +267,8 @@ void buttonReadings() {
 }
 
 void tempoReading() {
-  int fastest = 5;
-  int slowest = 300;
+  int fastest = 1;
+  int slowest = 200;
   totalTempo = totalTempo - readingsTempo[tracker];                   //Subtract last reading at this index. Otherwise the total would just keep getting bigger!           
   readingsTempo[tracker] = analogRead(tempoPot);               //Read analog input 1-8 and assign to specific index
   totalTempo += readingsTempo[tracker];                             //Add that index to the total
@@ -417,27 +293,25 @@ void lengthReading() {
 
 void valAssignment() {
   for (int y=0; y<numChannels; y++) {
-    if (averageBot[y] > lastBot[y] + tolerance || averageBot[y] < lastBot[y] - tolerance) {
-      for (int x=0; x<6; x++) {
-        if (averageBot[y] > lowBot[x] && averageBot[y] < highBot[x]) {
-          allVals[y] = x;
-        }
+    for (int x=0; x<6; x++) {
+      if (averageBot[y] > lowBot[x] && averageBot[y] < highBot[x]) {
+        botVals[y] = x;
       }
-      lastBot[y] = averageBot[y];
+      for (int i=5; i>=botVals[y]; i--) {
+        matrix.drawPixel(y, i, HIGH);
+      }
     }
     if (averageTop[y] > lastTop[y] + tolerance || averageTop[y] < lastTop[y] - tolerance) {
       for (int x=0; x<8; x++) {
         if (averageTop[y] > lowTop[x] && averageTop[y] < highTop[x]) {
-          allVals[y] = x+8;
+          topVals[y] = x+8;
         }
       }
       lastTop[y] = averageTop[y];
     }
-    matrix.drawPixel(y, allVals[y], HIGH);
+  matrix.drawPixel(y, topVals[y], HIGH);    
   }
 }
-
-
 
 
 
